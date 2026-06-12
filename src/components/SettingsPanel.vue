@@ -5,6 +5,19 @@ import type { SettingsData } from '../types'
 const props = defineProps<{ settings: SettingsData }>()
 const emit = defineEmits<{ save: [payload: { token: string; sshKey: string; llmApiKey?: string; llmApiBase?: string; llmModel?: string }] }>()
 
+const theme = ref(localStorage.getItem('triplea-theme') || 'light')
+
+function toggleTheme() {
+  theme.value = theme.value === 'light' ? 'dark' : 'light'
+  localStorage.setItem('triplea-theme', theme.value)
+  document.documentElement.setAttribute('data-theme', theme.value)
+}
+
+// 初始化主题
+if (localStorage.getItem('triplea-theme') === 'dark') {
+  document.documentElement.setAttribute('data-theme', 'dark')
+}
+
 const token = ref('')
 const llmApiKey = ref('')
 const llmApiBase = ref('')
@@ -71,6 +84,19 @@ function save() {
       </div>
     </div>
 
-    <button class="btn btn-primary" @click="save">保存设置</button>
+    <button class="btn btn-primary" @click="save" style="margin-bottom:14px;">保存设置</button>
+
+    <!-- 主题切换 -->
+    <div class="glass-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;font-size:13px;">主题</div>
+          <div style="font-size:11px;color:var(--text-dim);">切换浅色 / 深色模式</div>
+        </div>
+        <button class="btn" @click="toggleTheme" style="font-size:12px;">
+          {{ theme === 'light' ? '🌙 深色' : '☀ 浅色' }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
