@@ -1042,13 +1042,18 @@ def create_app() -> FastAPI:
                 title = item.find("title")
                 link = item.find("link")
                 desc = item.find("description")
+                pub = item.find("pubDate")
                 items.append({
                     "title": (title.text or "")[:120] if title is not None else "",
                     "url": (link.text or "") if link is not None else "",
                     "summary": (desc.text or "")[:200] if desc is not None else "",
+                    "date": (pub.text or "") if pub is not None else "",
                 })
-            _seestar_cache["news"] = {"ts": now, "data": items[:8]}
-            return {"news": items[:8]}
+            # pubDate 排序：最新在前
+            from email.utils import parsedate_to_datetime
+            items.sort(key=lambda x: parsedate_to_datetime(x["date"]) if x["date"] else __import__('datetime').datetime.min, reverse=True)
+            _seestar_cache["news"] = {"ts": now, "data": items[:15]}
+            return {"news": items[:15]}
         except Exception:
             return {"news": _seestar_cache["news"]["data"] or []}
 
@@ -1270,11 +1275,14 @@ def create_app() -> FastAPI:
                 root = ET.fromstring(resp.content)
                 items = []
                 for item in root.iter("item"):
-                    t = item.find("title"); d = item.find("description"); l = item.find("link")
+                    t = item.find("title"); d = item.find("description"); l = item.find("link"); p = item.find("pubDate")
                     items.append({"title": (t.text or "")[:120] if t is not None else "",
                                   "url": (l.text or "") if l is not None else "",
-                                  "summary": (d.text or "")[:200] if d is not None else ""})
-                _seestar_cache["news"] = {"ts": time.time(), "data": items[:8]}
+                                  "summary": (d.text or "")[:200] if d is not None else "",
+                                  "date": (p.text or "") if p is not None else ""})
+                from email.utils import parsedate_to_datetime
+                items.sort(key=lambda x: parsedate_to_datetime(x["date"]) if x["date"] else __import__('datetime').datetime.min, reverse=True)
+                _seestar_cache["news"] = {"ts": time.time(), "data": items[:15]}
             except Exception: pass
         threading.Thread(target=_warm, daemon=True).start()
 

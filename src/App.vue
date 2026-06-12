@@ -92,7 +92,7 @@ const kbLoading = ref(false)
 const kbQuery = ref('')
 
 // ── Seestar 状态（在 App.vue 中，永不丢失）──
-const seestarNews = ref<{ title: string; url: string; summary: string }[]>([])
+const seestarNews = ref<{ title: string; url: string; summary: string; date: string }[]>([])
 const seestarTrending = ref<{ name: string; desc: string; stars: string; url: string; lang: string }[]>([])
 const seestarNewsLoading = ref(false)
 

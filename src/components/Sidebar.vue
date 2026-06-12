@@ -24,8 +24,12 @@ const icons: Record<string, string> = {
 
 <template>
   <div style="width:180px;background:var(--bg-sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:14px 10px;flex-shrink:0;">
-    <div style="padding:6px 10px 18px;font-size:14px;letter-spacing:-0.2px;color:var(--text);font-weight:600;">
-      <span style="font-weight:800;">A</span>utodl<span style="font-weight:800;">A</span>gents
+    <div style="padding:6px 10px 18px;display:flex;align-items:center;gap:6px;">
+      <svg width="20" height="20" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--text);flex-shrink:0;">
+        <circle cx="24" cy="24" r="5" stroke-width="2.2"/>
+        <path d="M24 2v5m0 34v5M8.5 8.5l3.5 3.5m24 24l3.5 3.5M2 24h5m34 0h5M8.5 39.5l3.5-3.5m24-24l3.5-3.5"/>
+      </svg>
+      <span style="font-size:14px;font-weight:700;letter-spacing:-0.3px;color:var(--text);">Triple<span style="font-weight:900;">A</span></span>
     </div>
 
     <nav style="flex:1;">
@@ -71,3 +75,20 @@ const icons: Record<string, string> = {
     </div>
   </div>
 </template>
+
+<style scoped>
+.sidebar-link {
+  transition: all 0.1s ease;
+}
+.sidebar-link:active {
+  transform: scale(0.95);
+}
+.sidebar-link:active svg {
+  animation: iconBounce 0.3s ease;
+}
+@keyframes iconBounce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+</style>

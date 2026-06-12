@@ -16,8 +16,13 @@ const emit = defineEmits<{
 <template>
   <div style="display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:48px;background:var(--bg-card);border-bottom:1px solid var(--border);flex-shrink:0;">
     <!-- 左侧品牌 -->
-    <div style="font-weight:700;font-size:14px;letter-spacing:-0.2px;color:var(--text);">
-      <span style="font-weight:800;">A</span>utodl<span style="font-weight:800;">A</span>gents
+    <div style="display:flex;align-items:center;gap:6px;">
+      <!-- TripleA SVG logo -->
+      <svg width="20" height="20" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--text);flex-shrink:0;">
+        <circle cx="24" cy="24" r="5" stroke-width="2.2"/>
+        <path d="M24 2v5m0 34v5M8.5 8.5l3.5 3.5m24 24l3.5 3.5M2 24h5m34 0h5M8.5 39.5l3.5-3.5m24-24l3.5-3.5"/>
+      </svg>
+      <span style="font-weight:700;font-size:14px;letter-spacing:-0.3px;color:var(--text);">Triple<span style="font-weight:900;">A</span></span>
     </div>
 
     <!-- 右侧服务器信息 -->
