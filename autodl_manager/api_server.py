@@ -949,6 +949,129 @@ def create_app() -> FastAPI:
         except Exception as e:
             return JSONResponse({"error": str(e)}, 500)
 
+    # ─── Seestar：论文解析 + AI新闻 + GitHub热门 ───
+
+    @app.post("/api/seestar/paper")
+    async def seestar_paper(request: Request):
+        """论文解析 — 参考 ljg-skills 精读流程。
+        POST body: {"url": "https://arxiv.org/abs/..."}
+        """
+        body = await request.json()
+        url = body.get("url", "").strip()
+        if not url:
+            return JSONResponse({"error": "url 必填"}, 400)
+
+        config = _load_config()
+        api_key = config.get("llm", {}).get("api_key", "")
+        if not api_key:
+            return JSONResponse({"error": "API Key 未配置"}, 400)
+
+        try:
+            # Fetch paper content
+            import requests as req
+            # 处理 arXiv URL
+            if "arxiv.org/abs/" in url:
+                paper_id = url.split("/abs/")[-1].split("v")[0]
+                abs_url = f"https://arxiv.org/abs/{paper_id}"
+                api_url = f"https://export.arxiv.org/api/query?id_list={paper_id}&max_results=1"
+            else:
+                abs_url = url
+                api_url = None
+
+            paper_text = ""
+            if api_url:
+                r = req.get(api_url, timeout=10)
+                paper_text = r.text[:8000]
+
+            # LLM analysis
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(
+                model=config.get("llm", {}).get("model", "deepseek-v4-flash"),
+                api_key=api_key,
+                base_url=config.get("llm", {}).get("api_base", "https://api.deepseek.com/v1"),
+                temperature=0.3,
+            )
+
+            prompt = f"""你是一位资深 AI 研究员。请用中文分析以下论文。返回 JSON：
+
+{{
+  "title": "论文标题",
+  "problem": "这篇论文解决的核心问题（一句话）",
+  "insight": "核心洞见——这篇论文真正的贡献是什么（2-3句）",
+  "concepts": ["关键术语1", "关键术语2", "关键术语3"],
+  "review": "如果你是审稿人，你会提出什么问题或缺陷（2-3句）"
+}}
+
+论文内容：{paper_text[:6000]}
+
+只返回 JSON，不要其他内容。"""
+
+            result = llm.invoke(prompt)
+            import json as _j
+            try:
+                content = result.content
+                if "```" in content:
+                    content = content.split("```")[1]
+                    if content.startswith("json"): content = content[4:]
+                parsed = _j.loads(content)
+            except Exception:
+                parsed = {"title": url, "problem": "解析失败", "insight": "", "concepts": [], "review": ""}
+
+            return {"result": parsed}
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, 500)
+
+    @app.get("/api/seestar/news")
+    async def seestar_news():
+        """AI 速览 — 3-5 条重要 AI 新闻摘要。"""
+        config = _load_config()
+        api_key = config.get("llm", {}).get("api_key", "")
+        if not api_key:
+            return {"news": []}
+
+        try:
+            # 用 LLM 生成今日 AI 新闻摘要（简化版）
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(
+                model=config.get("llm", {}).get("model", "deepseek-v4-flash"),
+                api_key=api_key,
+                base_url=config.get("llm", {}).get("api_base", "https://api.deepseek.com/v1"),
+                temperature=0.3,
+            )
+            prompt = """请列出今天最重要的 4 条 AI 行业新闻。每条用一句话中文概括。返回 JSON 数组：
+[{"title": "...", "summary": "...", "source": "TechCrunch/FT/Bloomberg等"}]
+
+只返回 JSON 数组。"""
+            result = llm.invoke(prompt)
+            import json as _j
+            c = result.content
+            if "```" in c: c = c.split("```")[1]
+            news = _j.loads(c)
+            return {"news": news[:4]}
+        except Exception:
+            return {"news": []}
+
+    @app.get("/api/seestar/trending")
+    async def seestar_trending():
+        """GitHub 热门 AI 仓库。"""
+        try:
+            import requests as req
+            r = req.get(
+                "https://api.github.com/search/repositories?q=ai+agent+topic:ai&sort=stars&order=desc&per_page=6",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=10,
+            )
+            data = r.json()
+            repos = [{
+                "name": item["full_name"],
+                "desc": (item.get("description") or "")[:120],
+                "stars": str(item.get("stargazers_count", 0)),
+                "url": item["html_url"],
+            } for item in data.get("items", [])[:6]]
+            return {"repos": repos}
+        except Exception:
+            return {"repos": []}
+
     # ─── MCP 协议端点：GPU Monitor Server ───
 
     @app.get("/mcp/tools")
