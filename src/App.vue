@@ -91,6 +91,31 @@ const kbEntries = ref<{ id: string; content: string; timestamp: string }[]>([])
 const kbLoading = ref(false)
 const kbQuery = ref('')
 
+// ── Seestar 状态（在 App.vue 中，永不丢失）──
+const seestarNews = ref<{ title: string; url: string; summary: string }[]>([])
+const seestarTrending = ref<{ name: string; desc: string; stars: string; url: string; lang: string }[]>([])
+const seestarNewsLoading = ref(false)
+
+async function loadSeestarNews(force = false) {
+  seestarNewsLoading.value = true
+  try {
+    const url = 'http://127.0.0.1:8899/api/seestar/news' + (force ? '?refresh=1' : '')
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.news) seestarNews.value = data.news
+  } catch (_) { /* ignore */ }
+  seestarNewsLoading.value = false
+}
+
+async function loadSeestarTrending(force = false) {
+  try {
+    const url = 'http://127.0.0.1:8899/api/seestar/trending' + (force ? '?refresh=1' : '')
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.repos) seestarTrending.value = data.repos
+  } catch (_) { /* ignore */ }
+}
+
 async function loadKnowledgeBase() {
   kbLoading.value = true
   try {
@@ -389,7 +414,9 @@ onMounted(async () => {
   await Promise.all([refreshInstances(), refreshCost(true), refreshSettings(), refreshAlerts()])
   loading.init = false
   refreshAgentMemory()
-  loadKnowledgeBase()  // 预加载知识库
+  loadKnowledgeBase()
+  loadSeestarNews()     // 预加载 Seestar
+  loadSeestarTrending()
 
   sseStream = createSSEStream(
     (gpu) => { if (gpu.uuid === currentInstance.value?.uuid) gpuData.value = gpu },
@@ -468,6 +495,11 @@ onUnmounted(() => {
 
           <SeestarPage
             v-if="currentTab === 'seestar'"
+            :news="seestarNews"
+            :trending="seestarTrending"
+            :newsLoading="seestarNewsLoading"
+            @refreshNews="loadSeestarNews(true)"
+            @refreshTrending="loadSeestarTrending(true)"
           />
 
           <KnowledgeBase
