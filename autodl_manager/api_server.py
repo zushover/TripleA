@@ -1021,16 +1021,23 @@ def create_app() -> FastAPI:
         except Exception as e:
             return JSONResponse({"error": str(e)}, 500)
 
+    # ─── Seestar 缓存 ───
+    _seestar_cache: dict = {"news": {"ts": 0, "data": []}, "trending": {"ts": 0, "data": []}}
+
     @app.get("/api/seestar/news")
-    async def seestar_news():
-        """AI 速览 — 3-5 条重要 AI 新闻摘要。"""
+    async def seestar_news(refresh: str = "0"):
+        """AI 速览 — 缓存30分钟，秒加载。refresh=1 强制刷新。"""
+        nonlocal _seestar_cache
+        now = time.time()
+        if refresh != "1" and _seestar_cache["news"]["data"] and (now - _seestar_cache["news"]["ts"]) < 1800:
+            return {"news": _seestar_cache["news"]["data"]}
+
         config = _load_config()
         api_key = config.get("llm", {}).get("api_key", "")
         if not api_key:
             return {"news": []}
 
         try:
-            # 用 LLM 生成今日 AI 新闻摘要（简化版）
             from langchain_openai import ChatOpenAI
             llm = ChatOpenAI(
                 model=config.get("llm", {}).get("model", "deepseek-v4-flash"),
@@ -1038,39 +1045,37 @@ def create_app() -> FastAPI:
                 base_url=config.get("llm", {}).get("api_base", "https://api.deepseek.com/v1"),
                 temperature=0.3,
             )
-            prompt = """请列出今天最重要的 4 条 AI 行业新闻。每条用一句话中文概括。返回 JSON 数组：
-[{"title": "...", "summary": "...", "source": "TechCrunch/FT/Bloomberg等"}]
-
-只返回 JSON 数组。"""
-            result = llm.invoke(prompt)
+            result = llm.invoke("列出今天最重要的 4 条 AI 行业新闻，每条一句话中文概括。返回 JSON 数组: [{\"title\":\"...\",\"summary\":\"...\",\"source\":\"...\"}]。只返回 JSON。")
             import json as _j
             c = result.content
             if "```" in c: c = c.split("```")[1]
-            news = _j.loads(c)
-            return {"news": news[:4]}
+            news = _j.loads(c)[:4]
+            _seestar_cache["news"] = {"ts": now, "data": news}
+            return {"news": news}
         except Exception:
-            return {"news": []}
+            return {"news": _seestar_cache["news"]["data"] or []}
 
     @app.get("/api/seestar/trending")
-    async def seestar_trending():
-        """GitHub 热门 AI 仓库。"""
+    async def seestar_trending(refresh: str = "0"):
+        """GitHub 热门 — 缓存10分钟，秒加载。refresh=1 强制刷新。"""
+        nonlocal _seestar_cache
+        now = time.time()
+        if refresh != "1" and _seestar_cache["trending"]["data"] and (now - _seestar_cache["trending"]["ts"]) < 600:
+            return {"repos": _seestar_cache["trending"]["data"]}
+
         try:
             import requests as req
             r = req.get(
                 "https://api.github.com/search/repositories?q=ai+agent+topic:ai&sort=stars&order=desc&per_page=6",
-                headers={"Accept": "application/vnd.github.v3+json"},
-                timeout=10,
+                headers={"Accept": "application/vnd.github.v3+json"}, timeout=10,
             )
-            data = r.json()
-            repos = [{
-                "name": item["full_name"],
-                "desc": (item.get("description") or "")[:120],
-                "stars": str(item.get("stargazers_count", 0)),
-                "url": item["html_url"],
-            } for item in data.get("items", [])[:6]]
+            repos = [{"name": i["full_name"], "desc": (i.get("description") or "")[:120],
+                      "stars": str(i.get("stargazers_count", 0)), "url": i["html_url"]}
+                     for i in r.json().get("items", [])[:6]]
+            _seestar_cache["trending"] = {"ts": now, "data": repos}
             return {"repos": repos}
         except Exception:
-            return {"repos": []}
+            return {"repos": _seestar_cache["trending"]["data"] or []}
 
     # ─── MCP 协议端点：GPU Monitor Server ───
 
@@ -1243,12 +1248,27 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def start_daemon():
         nonlocal _daemon
-        # 注入 SSE 广播
         set_broadcaster(_sse_broadcast)
-        # 创建并启动守护进程
         api = _get_api() if _has_token() else None
         _daemon = DaemonV2(registry=_get_registry(), db=get_db(), api=api)
         asyncio.create_task(_daemon.run())
+        # 后台预热 Seestar 缓存（不阻塞启动）
+        import threading
+        def _warm():
+            try:
+                # 预热 trending（快）
+                import requests as _r
+                resp = _r.get(
+                    "https://api.github.com/search/repositories?q=ai+agent+topic:ai&sort=stars&order=desc&per_page=6",
+                    headers={"Accept": "application/vnd.github.v3+json"}, timeout=10,
+                )
+                repos = [{"name": i["full_name"], "desc": (i.get("description") or "")[:120],
+                          "stars": str(i.get("stargazers_count", 0)), "url": i["html_url"]}
+                         for i in resp.json().get("items", [])[:6]]
+                _seestar_cache["trending"] = {"ts": time.time(), "data": repos}
+            except Exception:
+                pass
+        threading.Thread(target=_warm, daemon=True).start()
 
     @app.on_event("shutdown")
     async def stop_daemon():

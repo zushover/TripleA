@@ -31,20 +31,21 @@ async function analyzePaper() {
 }
 
 // ── Load News ──
-async function loadNews() {
+async function loadNews(force = false) {
   newsLoading.value = true
   try {
-    const res = await fetch('http://127.0.0.1:8899/api/seestar/news')
+    const url = 'http://127.0.0.1:8899/api/seestar/news' + (force ? '?refresh=1' : '')
+    const res = await fetch(url)
     const data = await res.json()
     if (data.news) news.value = data.news
   } catch (_) { /* ignore */ }
   newsLoading.value = false
 }
 
-// ── Load Trending ──
-async function loadTrending() {
+async function loadTrending(force = false) {
   try {
-    const res = await fetch('http://127.0.0.1:8899/api/seestar/trending')
+    const url = 'http://127.0.0.1:8899/api/seestar/trending' + (force ? '?refresh=1' : '')
+    const res = await fetch(url)
     const data = await res.json()
     if (data.repos) trending.value = data.repos
   } catch (_) { /* ignore */ }
@@ -57,7 +58,7 @@ onMounted(() => { loadNews(); loadTrending() })
   <div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
       <h1 style="font-size:1.3rem;font-weight:700;margin:0;">Seestar</h1>
-      <button class="btn" @click="loadNews(); loadTrending()" style="font-size:12px;">
+      <button class="btn" @click="loadNews(true); loadTrending(true)" style="font-size:12px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
         刷新
       </button>
