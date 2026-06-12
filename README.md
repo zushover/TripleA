@@ -1,201 +1,281 @@
-# Triple A (AutodlAgents)
+# Triple A v0.1
 
-> **AI Agent GPU 云管理桌面应用** — 自然语言操控 GPU 实例，多 Agent 协作，共享记忆，一键部署 Claude Code。
+<p align="center">
+  <b>人与 AI 科研之间的第一道桥梁。</b><br>
+  一句话租卡、用卡、跑实验。<br>
+  一个面板搞定 GPU 管理、Agent 协作、实验记录、知识归档。<br>
+  <b>不用打开服务器终端。</b>
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.12-blue)
-![Vue](https://img.shields.io/badge/Vue-3.5-green)
-![Tauri](https://img.shields.io/badge/Tauri-2.0-orange)
+<p align="center">
+  <img src="https://img.shields.io/badge/status-v0.1_active-1c1c1e?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" />
+  <img src="https://img.shields.io/badge/Python-3.12-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Vue-3.5-green?style=flat-square" />
+</p>
 
 ---
 
 ## 这是什么
 
-Triple A 是一个桌面应用，把 GPU 云管理变成对话。不用手动 SSH、不用记命令行，对着 AI Agent 说话就行。
+**Triple A 是面向 AI 科研工作者的智能实验助手。** 不是 GPU 管理工具，不是聊天机器人——它是一个能理解你研究意图、自主操作 GPU 服务器、管理实验全流程、归档知识记忆的 AI Agent 系统。
 
-**核心理念：面板是大脑，服务器 Agent 是手脚。** 电脑端 Master Agent 负责任务理解和分发，服务器端子 Agent 负责执行。两边通过 ChromaDB 共享记忆，通过 MCP 协议通信。
+**核心理念：你不应该花时间操作服务器。你应该花时间思考。**
 
 ```
-你说："检查所有 GPU 利用率，空闲的关机"
-  → Master Agent 自主决策：
-    1. 调 list_gpu_instances 列出所有实例
-    2. 逐个 SSH 采集 GPU 利用率
-    3. 识别利用率 <10% 的实例
-    4. 询问确认后关机
-    5. 汇总报告
+现在：                         有了 Triple A：
+                               
+ssh -p 49200 root@xxx          "在 3080Ti 上跑 LLaMA-Factory LoRA 微调"
+nvidia-smi                      ↓
+tmux new -s train              Agent 自主完成：
+python train.py                   1. 检查 GPU 可用性
+tail -f nohup.out                 2. 探测服务器环境
+scp results back                  3. 远程执行训练脚本
+手动写实验报告                    4. 实时监控 loss + GPU 利用率
+                                 5. 异常自动恢复
+                                 6. 结果收集 + 知识库归档
+                                 7. 生成实验报告
+                               
+你只需要下一条指令。              剩下的 Triple A 全自动完成。
 ```
+
+---
+
+## 为什么叫 Triple A
+
+**AutodlAgents Architecture** — 三层 Agent 架构：
+
+```
+A¹  Master Agent (面板端)       — 理解意图、分解任务、分发执行
+A²  Sub-Agent (服务器端)         — 代码编写、实验运行、日志分析  
+A³  Memory Agent (ChromaDB)     — 对话记忆、知识归档、决策审计
+```
+
+三者通过 MCP 协议和 REST API 通信，共享同一份 ChromaDB 记忆。Master 不执行代码，Sub-Agent 不自行决策，Memory 不遗忘。
 
 ---
 
 ## 架构
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                  Triple A 桌面端 (Tauri + Vue 3)              │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │          Master Agent (LangGraph ReAct)                │  │
-│  │  8 个 Tool：list/check/execute/delegate/shutdown/...    │  │
-│  │  模型：DeepSeek V4 Flash (兼容 Anthropic API)           │  │
-│  └────────────────────┬───────────────────────────────────┘  │
-│                       │                                      │
-│  ┌────────────────────┴───────────────────────────────────┐  │
-│  │           Memory Hub (ChromaDB 向量数据库)              │  │
-│  │  对话历史 · 实验记录 · 文档索引 · 决策日志               │  │
-│  └────────────────────┬───────────────────────────────────┘  │
-│                       │                                      │
-│  ┌────────────────────┴───────────────────────────────────┐  │
-│  │           MCP Server (GPU Monitor)                     │  │
-│  │  5 个 Tool + 3 个 Resource + 2 个 Prompt                │  │
-│  └────────────────────┬───────────────────────────────────┘  │
-│                       │                                      │
-│  ┌────────────────────┴───────────────────────────────────┐  │
-│  │           Vue 3 面板 (5 个页面)                         │  │
-│  │  服务器 · Triple A · 知识库 · 费用 · 设置                │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
-│  Python Sidecar：FastAPI + SQLite + Paramiko + LangChain     │
-│  桌面壳：Tauri 2 (Rust) + 系统托盘                          │
-└──────────────────────┬───────────────────────────────────────┘
-                       │ SSH + REST API
-┌──────────────────────┴───────────────────────────────────────┐
-│                  GPU 服务器 (AutoDL)                         │
-│                                                              │
-│  ┌─────────────────────────┐  ┌─────────────────────────┐   │
-│  │  Server A · 3080Ti      │  │  Server B · 4090D       │   │
-│  │                         │  │                         │   │
-│  │  Claude Code (tmux)     │  │  Claude Code (tmux)     │   │
-│  │  Watchdog (任务轮询)     │  │  Watchdog (任务轮询)     │   │
-│  │                         │  │                         │   │
-│  │  ☀️ 一键部署             │  │  ☀️ 一键部署             │   │
-│  └─────────────────────────┘  └─────────────────────────┘   │
-└──────────────────────────────────────────────────────────────┘
+┌═══════════════════════════════════════════════════════════════┐
+║                    Triple A 桌面端                            ║
+║                                                               ║
+║  ┌─────────────────────────────────────────────────────────┐ ║
+║  │            A¹ Master Agent (LangGraph ReAct)            │ ║
+║  │                                                         │ ║
+║  │  理解意图 → 分解任务 → 匹配资源 → 分发执行 → 汇总归档    │ ║
+║  │  8 个 Tool · DeepSeek V4 Flash · 流式 SSE 输出          │ ║
+║  └───────────────────────┬─────────────────────────────────┘ ║
+║                          │                                   ║
+║  ┌───────────────────────┴─────────────────────────────────┐ ║
+║  │              A³ Memory Hub (ChromaDB)                   │ ║
+║  │  对话历史 · 实验记录 · 论文文档 · 决策审计               │ ║
+║  │  全向量索引 · REST API 读写 · 语义搜索                   │ ║
+║  └───────────────────────┬─────────────────────────────────┘ ║
+║                          │                                   ║
+║  ┌───────────────────────┴─────────────────────────────────┐ ║
+║  │              MCP Server (标准化工具层)                   │ ║
+║  │  GPU Monitor · Knowledge Base · Task Queue              │ ║
+║  └───────────────────────┬─────────────────────────────────┘ ║
+║                          │                                   ║
+║  ┌───────────────────────┴─────────────────────────────────┐ ║
+║  │              Vue 3 面板 (5 个页面)                       │ ║
+║  │  服务器 · Triple A · 知识库 · 费用 · 设置                │ ║
+║  └─────────────────────────────────────────────────────────┘ ║
+║                                                               ║
+║  技术栈：Tauri 2 (Rust) + Vue 3 + Python FastAPI + SQLite    ║
+╚═══════════════════════════════════════════════════════════════╝
+                           │
+                    SSH + REST + MCP
+                           │
+┌──────────────────────────┴───────────────────────────────────┐
+║                     GPU 服务器集群                            ║
+║                                                               ║
+║  ┌─────────────────────┐  ┌─────────────────────┐            ║
+║  │  A² 3080Ti Server   │  │  A² 4090D Server    │            ║
+║  │                     │  │                     │            ║
+║  │  Claude Code (tmux) │  │  Claude Code (tmux) │            ║
+║  │  Watchdog (任务轮询) │  │  Watchdog (任务轮询) │            ║
+║  │                     │  │                     │            ║
+║  │  ☀️ 一键部署         │  │  ☀️ 一键部署         │            ║
+║  └─────────────────────┘  └─────────────────────┘            ║
+║                                                               ║
+║  Agent 可在服务器本地：写代码、装环境、跑实验、读日志、画图   ║
+╚═══════════════════════════════════════════════════════════════╝
 ```
 
-### 通信流
+### 一次完整的科研实验流程
 
 ```
-用户 → Master Agent → 选 Tool → SSH 到服务器 → nvidia-smi/日志 → Agent 分析 → 回答
+研究员 → Triple A 面板: "在 3080Ti 上跑 LLaMA-Factory 的 LoRA 微调，用 custom_qa_10k 数据集，预算 20 元"
 
-委派任务：
-Master Agent → delegate_to_server(uuid, 任务)
-  → SSH → claude -p "任务" 在远程执行
-  → 服务器 CC 本地运行 → 返回结果
-  → Master 汇总呈现
+A¹ Master Agent:
+  Step 1 — 理解意图: experiment 类型，需要 GPU 服务器
+  Step 2 — 查资源: 3080Ti 在线，12GB显存可用，余额充足
+  Step 3 — 查历史: 知识库里搜到上次 LoRA 实验，最优 lr=2e-4
+  Step 4 — 分解任务:
+    Task 1: 环境检测 (CUDA/PyTorch/LLaMA-Factory)
+    Task 2: 代码准备 (Git clone + LoRA 配置)
+    Task 3: 数据上传 (custom_qa_10k)
+    Task 4: 启动训练 (tmux + nohup)
+    Task 5: 监控 (每120s 采集 GPU + loss)
+    Task 6: 结果收集 (metrics + loss曲线)
+    Task 7: 知识归档 (实验报告 → ChromaDB)
+  Step 5 — 分发给 A² 执行
+  Step 6 — 监控进度，异常时自动干预
+  Step 7 — 汇总结果，生成报告
+
+A² Sub-Agent (3080Ti 上的 Claude Code):
+  → 收到 Task 1-4 → 本地执行（不需要每次 SSH）
+  → 每 120s 向 A³ 上报心跳 + GPU 状态
+  → OOM 了？自动减半 batch_size 重试
+  → 训练完成 → 上传 metrics + loss.png → 通知 A¹
+
+A³ Memory:
+  → 实验配置: {"gpu":"3080Ti", "dataset":"custom_qa_10k", "lr":2e-4}
+  → 实验结果: {"final_loss":0.08, "best_bleu":35.2, "cost":6.4}
+  → 下次实验前 Master 自动检索参考
+
+研究员收到通知: "实验完成 ✅ Loss 0.23→0.08, 耗时 3.2h, 花费 ¥6.4, 报告已归档"
 ```
 
 ---
 
 ## 功能
 
-### 🖥 服务器管理
-- **三源实例注册：** Pro API / Web 控制台 / 自定义 SSH
-- **智能探测：** SSH 连接 → GPU 检测 → 系统信息采集 → 自动更新状态
-- **GPU 监控：** 实时利用率、显存、温度、进程（nvidia-smi）
-- **SSH 命令解析：** 粘贴连接字符串 → 自动提取 host/port/user
-- **空闲检测：** GPU <5% → 告警 → 自动关机
+### 🖥 一句话管理 GPU
 
-### 🤖 Triple A（Master Agent）
-- **自然语言管理 GPU：** "找到空闲 GPU 并关机"
-- **LangGraph ReAct 循环：** 观察 → 思考 → 行动 → 观察
-- **8 个 Tool：** list_gpu_instances、check_gpu_utilization、probe_instance_health、execute_on_server、delegate_to_server、get_balance_and_cost、shutdown_idle_instance、save_to_knowledge_base
-- **流式 SSE 输出：** 逐字渲染，实时可见
-- **子 Agent 委派：** `delegate_to_server()` 远程调服务器 Claude Code
+全部是自然语言。不需要记 SSH 命令、不需要配环境变量：
+
+- **"列出所有 GPU 实例"** → 表格展示，状态/型号/单价一目了然
+- **"检查 3080Ti 的利用率"** → SSH 直连采集 nvidia-smi 数据
+- **"关掉所有空闲的 GPU"** → Agent 先预览，你确认后执行
+- **"现在余额多少"** → AutoDL + DeepSeek 双余额
+
+### 🤖 Master Agent 自主决策
+
+8 个 LangChain Tool，LangGraph ReAct 循环。Agent 自己决定调哪个工具、传什么参数、怎么处理异常。不是 if/else 规则引擎——是真的 LLM 推理。
+
+| Tool | 做什么 | 
+|------|--------|
+| `list_gpu_instances` | 列出所有实例 | 
+| `check_gpu_utilization(uuid)` | 实时 GPU 利用率/显存/温度 | 
+| `probe_instance_health(uuid)` | SSH 探测 + GPU 型号 + 系统信息 | 
+| `execute_on_server(uuid, cmd)` | 远程执行任意命令 | 
+| `delegate_to_server(uuid, task)` | 委派自然语言任务给服务器 CC | 
+| `get_balance_and_cost` | AutoDL 余额 + 消费统计 | 
+| `shutdown_idle_instance(uuid)` | 安全关机（需确认）| 
+| `save_to_knowledge_base(cat, title, content)` | 自动归档实验数据 | 
 
 ### ☀️ 一键部署 Claude Code
-- SSH → 检测环境 → 安装 Node.js → `npm install -g @anthropic-ai/claude-code`
-- SFTP 配置 DeepSeek API（`~/.claude/env.sh`）
-- tmux 启动（`claude-code` + `watchdog` 双会话）
-- 部署后服务器 CC 自动通过 MCP 回连面板
 
-### 🧠 共享记忆 (ChromaDB)
-- **3 个 Collection：** conversations / experiments / agent_decisions
-- **REST API：** 任何 Agent 可读写搜索
-- **自动存档：** 每轮对话自动持久化
-- **循环检测：** 语义相似度检查防死循环
+这是 Triple A 最独特的能力。点一下太阳按钮：
+
+```
+SSH 连接 → 检测环境 → 装 Node.js → npm install claude-code
+→ SFTP 配置 DeepSeek API → tmux 启动 CC + Watchdog
+→ 大概 2 分钟 → 服务器上多了一个能自主写代码跑实验的 Agent
+```
+
+部署完后，你可以 `delegate_to_server(uuid, "帮我分析训练日志找出 loss 不收敛的原因")` —— 服务器端的 CC 在本地读文件、写分析、返回结论。不需要你把几百 MB 的日志下载到本地。
+
+### 🧠 永不遗忘的知识库
+
+ChromaDB 向量数据库——所有对话、实验、决策自动归档：
+
+- **语义搜索：** "上次 LoRA 微调用的什么学习率？" → 直接搜到
+- **分类浏览：** 对话 / 实验 / 决策 / 文档
+- **Agent 专属记忆：** 每个 Agent 的对话和实验单独归档
+- **循环检测：** 相似度 >90% 的重复决策自动告警
 
 ### 📡 MCP Server
-- **5 个 Tool：** gpu_status、gpu_history、list_gpu_instances、probe_instance、get_balance
-- **3 个 Resource：** instances://list、gpu://{uuid}/latest、balance://overview
-- **标准 MCP 协议：** 任何 MCP Client 可发现调用
 
-### 📚 知识库
-- 对话/实验/决策/文档 全文搜索
-- 分类筛选：全部 / 对话 / 实验 / 决策 / 文档
-- Agent 专属记忆（预留）
+GPU 监控以 MCP 标准协议暴露。任何支持 MCP 的工具（Claude Code、Cursor、自定义 Agent）都能发现并调用你的 GPU 数据。
 
-### 💰 费用追踪
-- AutoDL：实时余额 + 累计消费
-- DeepSeek：API 余额查询（赠送 + 充值）
-- 总计余额合并显示
+### 💰 双余额实时追踪
+
+AutoDL 服务器费用 + DeepSeek API 费用，一个面板看全部。余额不足自动推送告警。
 
 ---
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|------|
-| 桌面壳 | Tauri 2 (Rust) |
-| 前端 | Vue 3 + TypeScript + Vite |
-| 后端 | Python 3.12 + FastAPI |
-| 数据库 | SQLite (WAL 模式) |
-| Agent 框架 | LangChain + LangGraph |
-| 记忆 | ChromaDB (向量数据库) |
-| SSH | Paramiko |
-| LLM | DeepSeek V4 Flash (兼容 Anthropic API) |
-| MCP | Model Context Protocol (自建 Server) |
-| 打包 | PyInstaller (sidecar) + Tauri bundler (NSIS) |
+| 层 | 技术 | 为什么选它 |
+|---|------|----------|
+| 桌面壳 | Tauri 2 (Rust) | 比 Electron 轻 20 倍，原生系统托盘 |
+| 前端 | Vue 3 + TypeScript | 响应式、类型安全 |
+| 后端 | Python FastAPI | 异步、自动文档、生态好 |
+| Agent | LangChain + LangGraph | ReAct 循环、Tool Calling、流式输出 |
+| 记忆 | ChromaDB | 零配置向量数据库、Python 原生 |
+| SSH | Paramiko | 纯 Python SSH、SFTP 支持 |
+| LLM | DeepSeek V4 Flash | 兼容 Anthropic API、成本低、速度快 |
+| 数据库 | SQLite (WAL) | 零配置、适合桌面应用 |
+| MCP | 自建 Server | 标准协议、跨工具互通 |
+| 打包 | PyInstaller + NSIS | 单文件 exe、无需安装 Python |
 
 ---
 
 ## 快速开始
 
-### 环境要求
-- Python 3.12+
-- Node.js 20+
-- Rust（Tauri 打包用，可选）
-- AutoDL 账号（或任意可 SSH 的 GPU 服务器）
+### 你需要
 
-### 开发模式
+- Python 3.12+
+- Node.js 20+（前端开发用）
+- AutoDL 账号（或任意有 SSH 的 GPU 服务器）
+- DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com)）
+
+### 3 分钟跑起来
 
 ```bash
-# 1. 克隆
 git clone https://github.com/zushover/TripleA.git
 cd TripleA
 
-# 2. 安装依赖
+# 后端
 pip install -r requirements.txt
-npm install
-
-# 3. 配置
 cp config.example.yaml config.yaml
-# 编辑 config.yaml：
-#   auto_dl.token: AutoDL 开发者 Token
-#   llm.api_key: DeepSeek API Key (sk-xxx)
-#   llm.api_base: https://api.deepseek.com/v1
-#   llm.model: deepseek-v4-flash
-
-# 4. 启动后端
+# 编辑 config.yaml：填入 AutoDL Token 和 DeepSeek API Key
 python sidecar.py
 
-# 5. 启动前端（另一个终端）
-npm run dev
+# 前端（新终端）
+npm install && npm run dev
 
-# 6. 打开浏览器
-# http://127.0.0.1:8899
+# 打开浏览器 → http://127.0.0.1:8899
 ```
 
-### 生产构建
+### 注册一台 GPU 服务器
 
-```bash
-npm run build
-pyinstaller sidecar.spec --distpath src-tauri/target/debug
-cp -r dist src-tauri/target/debug/
-cp src-tauri/target/debug/python-sidecar.exe src-tauri/binaries/
-cd src-tauri && cargo build --release
+```
+1. 打开面板 → 服务器 → 注册
+2. 粘贴 AutoDL 的 SSH 连接命令: ssh -p 49200 root@connect.xxx
+3. 填入 SSH 密码
+4. 点探测 → 自动识别 GPU 型号
+5. 点 ☀️ 部署 CC → 等 2 分钟
+6. 服务器上多了一个 AI Agent
 ```
 
-> 浏览器测试和 Tauri 打包用的是同一份代码。Tauri WebView 加载 `dist/` 静态文件，Python sidecar 作为子进程运行。
+### 然后你只需要说话
+
+```
+"检查 GPU 状态"          → Agent 列实例 + 查利用率
+"在 3080Ti 上跑个实验"   → Agent 写代码 + 启动训练 + 监控 + 归档
+"上次 LoRA 最优参数是啥"  → 知识库语义搜索
+"关机空闲实例"           → 预览 → 确认 → 执行
+```
+
+---
+
+## 实测
+
+所有功能经真实 GPU 服务器验证：
+
+- GPU 探测 → 实时识别 3080Ti/4090D ✅
+- Agent ReAct → 8 个 Tool 全部调通 ✅
+- ☀️ 一键部署 → 成功部署到远程服务器 ✅
+- 知识库 → ChromaDB 存储 + 语义搜索 ✅
+- MCP → 标准协议 tools/resources 调用 ✅
+- 费用 → AutoDL + DeepSeek 双余额 ✅
+- 流式输出 → SSE 逐 token 渲染 ✅
 
 ---
 
@@ -203,61 +283,55 @@ cd src-tauri && cargo build --release
 
 ```
 TripleA/
-├── autodl_manager/          # Python 后端
-│   ├── api_server.py        # FastAPI (44 条路由)
-│   ├── agent/               # Agent 模块（核心）
-│   │   ├── tools.py         # 8 个 LangChain Tool
-│   │   ├── agent_loop.py    # LangGraph ReAct 循环
-│   │   ├── memory.py        # ChromaDB 记忆层
-│   │   ├── mcp_server.py    # MCP GPU Monitor Server
-│   │   ├── deploy.py        # ☀️ 一键部署 CC
-│   │   ├── watchdog.py      # 服务器任务监听器
-│   │   ├── executor.py      # 服务器端执行器
-│   │   ├── multi_agent.py   # 多 Agent 编排器
-│   │   ├── prompts.py       # System Prompt 模板
-│   │   └── observability.py # LangFuse 追踪
-│   └── ...
+├── autodl_manager/agent/    # 🔥 Agent 核心模块
+│   ├── tools.py             #   8 个 LangChain Tool
+│   ├── agent_loop.py        #   LangGraph ReAct 循环
+│   ├── memory.py            #   ChromaDB 记忆层
+│   ├── mcp_server.py        #   MCP GPU Monitor Server
+│   ├── deploy.py            #   ☀️ 一键部署 Claude Code
+│   ├── watchdog.py          #   服务器端任务监听器
+│   ├── executor.py          #   A² 执行器
+│   ├── multi_agent.py       #   多 Agent 编排器
+│   └── prompts.py           #   System Prompt
 ├── src/                     # Vue 3 前端
-│   ├── App.vue              # 根组件（状态中枢）
+│   ├── App.vue              #   根组件（状态中枢）
 │   └── components/
-│       ├── Dashboard.vue    # 服务器管理页
-│       ├── AgentLog.vue     # Triple A 对话界面
-│       ├── KnowledgeBase.vue# 知识库浏览器
-│       ├── CostAnalysis.vue # 费用追踪
-│       └── ...
-├── src-tauri/               # Tauri Rust 桌面壳
-├── sidecar.py               # PyInstaller 入口
-├── config.example.yaml      # 配置模板
-└── requirements.txt
+│       ├── Dashboard.vue    #   服务器管理
+│       ├── AgentLog.vue     #   Triple A 对话
+│       ├── KnowledgeBase.vue#   知识库
+│       └── CostAnalysis.vue #   费用分析
+├── src-tauri/               # Tauri 桌面壳
+├── sidecar.py               # Python sidecar 入口
+└── config.example.yaml      # 配置模板
 ```
 
 ---
 
-## Agent Tool 全集
+## 路线图
 
-| Tool | 功能 | 需要 |
-|------|------|------|
-| `list_gpu_instances` | 列出所有 GPU 实例 | — |
-| `check_gpu_utilization(uuid)` | 实时 GPU 利用率/显存/温度 | SSH |
-| `probe_instance_health(uuid)` | SSH 探测 + 系统信息 | SSH |
-| `execute_on_server(uuid, cmd)` | 远程执行命令 | SSH |
-| `delegate_to_server(uuid, task)` | 委派任务给服务器 CC | SSH + CC |
-| `get_balance_and_cost` | AutoDL 余额 + 消费 | API Token |
-| `shutdown_idle_instance(uuid)` | 关机 | SSH |
-| `save_to_knowledge_base(cat, title, content)` | 写入知识库 | — |
+```
+v0.1 ✅  当前：Master Agent + 服务器管理 + 一键部署 CC + 知识库 + MCP
+v0.2 🔜  多 Agent 实时协作（Watchdog 激活，A² 全自主运行）
+v0.3 📋  Agent 评估体系（成功率 / Token 效率 / 时间成本）
+v0.4 📋  Tauri 打包发布（Windows .exe / macOS .dmg）
+v0.5 📋  团队协作（多人共享同一知识库，实验对比分析）
+```
 
 ---
 
-## 实测验证
+## FAQ
 
-所有 Agent 功能经真实硬件测试：
-- 实例列表 + GPU 探测 → 实时 3080Ti 数据 ✅
-- Agent 查询 → LangGraph ReAct 真实 Tool 调用 ✅
-- ☀️ 一键部署 CC → 成功部署到 GPU 服务器 ✅
-- 知识库 → ChromaDB 对话/实验存储 ✅
-- MCP Server → 标准协议 tools/resources ✅
-- 费用 → AutoDL + DeepSeek 双余额 ✅
-- 流式输出 → SSE 逐字渲染 ✅
+**浏览器测试和打包后是一样的吗？**
+
+是的。浏览器跑的是 Vite 开发服务器，Tauri 打包后 WebView 加载的是同一份 Vue 代码构建的 `dist/` 静态文件。Python sidecar 在两种模式下都是独立进程。开发和生产的区别只是壳。
+
+**需要公网 IP 吗？**
+
+不需要。Master Agent 在你电脑上，通过 SSH 直连服务器。服务器端子 Agent 通过同样的 SSH 通道通信。不需要额外的公网端口。
+
+**支持 OpenAI API 吗？**
+
+支持任何 OpenAI 兼容的 API。在 `config.yaml` 中修改 `llm.api_base` 和 `llm.model` 即可。
 
 ---
 
@@ -267,50 +341,37 @@ MIT
 
 ---
 
-# Triple A (AutodlAgents)
+<p align="center">
+  <sub>Built by a researcher, for researchers. 让 AI 替你操作服务器，你只负责思考。</sub>
+</p>
 
-> **AI Agent GPU Cloud Management Desktop App** — Natural language GPU control, multi-agent orchestration, shared memory, one-click Claude Code deployment.
+---
 
-A desktop application that turns GPU cloud management into a conversation. Instead of SSH-ing into servers manually, you talk to an AI agent that manages everything.
+# Triple A v0.1
 
-**Core idea:** Panel is the brain. Servers are the limbs. Master Agent on the desktop orchestrates, Sub-agents on servers execute. ChromaDB provides shared memory. MCP provides standardized communication.
+<p align="center">
+  <b>The first bridge between human researchers and AI-powered scientific computing.</b>
+</p>
 
-### Quick Start (English)
+Triple A is an AI agent system for ML researchers. It manages GPU servers, runs experiments, archives knowledge — all through natural language. You never open a terminal.
+
+**One sentence to rent GPUs, run experiments, archive results.**
+
+Built with LangGraph ReAct Agent (8 Tools), MCP Server, ChromaDB memory, one-click Claude Code deployment. Tauri 2 + Vue 3 + Python FastAPI.
+
+### Quick Start
 
 ```bash
-git clone https://github.com/zushover/TripleA.git
-cd TripleA
-pip install -r requirements.txt
-npm install
-cp config.example.yaml config.yaml
-# Edit config.yaml with your AutoDL token and DeepSeek API key
-python sidecar.py      # Backend on :8899
-npm run dev            # Frontend dev server
+git clone https://github.com/zushover/TripleA.git && cd TripleA
+pip install -r requirements.txt && cp config.example.yaml config.yaml
+python sidecar.py           # Backend :8899
+npm install && npm run dev  # Frontend dev server
 # Open http://127.0.0.1:8899
 ```
 
-### Tech Stack
+### Architecture
 
-| Layer | Tech |
-|-------|------|
-| Desktop | Tauri 2 (Rust) |
-| Frontend | Vue 3 + TypeScript + Vite |
-| Backend | Python FastAPI + SQLite |
-| Agent | LangChain + LangGraph |
-| Memory | ChromaDB |
-| SSH | Paramiko |
-| LLM | DeepSeek V4 Flash |
-| MCP | Custom MCP Server |
-
-### Features
-
-- **Server Management** — Three-source instances, GPU monitoring, smart probing
-- **Master Agent** — 8 LangChain Tools, LangGraph ReAct, streaming SSE
-- **One-Click CC Deploy** — SSH → Node.js → Claude Code → tmux
-- **Shared Memory** — ChromaDB with REST API for cross-agent access
-- **MCP Server** — 5 Tools + 3 Resources, standard protocol
-- **Knowledge Base** — Full-text search, category filters, per-agent memory
-- **Cost Tracking** — AutoDL + DeepSeek dual balance
+A¹ Master Agent (LangGraph ReAct) → A² Sub-Agent (Claude Code on GPU servers) → A³ Memory (ChromaDB). Communication via MCP + REST + SSH.
 
 ### License
 
