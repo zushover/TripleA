@@ -1026,56 +1026,64 @@ def create_app() -> FastAPI:
 
     @app.get("/api/seestar/news")
     async def seestar_news(refresh: str = "0"):
-        """AI 速览 — 缓存30分钟，秒加载。refresh=1 强制刷新。"""
+        """AI 速览 — RSS 直接解析，无 LLM，秒加载。缓存5分钟。"""
         nonlocal _seestar_cache
         now = time.time()
-        if refresh != "1" and _seestar_cache["news"]["data"] and (now - _seestar_cache["news"]["ts"]) < 1800:
+        if refresh != "1" and _seestar_cache["news"]["data"] and (now - _seestar_cache["news"]["ts"]) < 300:
             return {"news": _seestar_cache["news"]["data"]}
 
-        config = _load_config()
-        api_key = config.get("llm", {}).get("api_key", "")
-        if not api_key:
-            return {"news": []}
-
         try:
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=config.get("llm", {}).get("model", "deepseek-v4-flash"),
-                api_key=api_key,
-                base_url=config.get("llm", {}).get("api_base", "https://api.deepseek.com/v1"),
-                temperature=0.3,
-            )
-            result = llm.invoke("列出今天最重要的 4 条 AI 行业新闻，每条一句话中文概括。返回 JSON 数组: [{\"title\":\"...\",\"summary\":\"...\",\"source\":\"...\"}]。只返回 JSON。")
-            import json as _j
-            c = result.content
-            if "```" in c: c = c.split("```")[1]
-            news = _j.loads(c)[:4]
-            _seestar_cache["news"] = {"ts": now, "data": news}
-            return {"news": news}
+            import requests as _r
+            import xml.etree.ElementTree as ET
+            resp = _r.get("https://aihot.virxact.com/feed.xml", timeout=10)
+            root = ET.fromstring(resp.content)
+            items = []
+            for item in root.iter("item"):
+                title = item.find("title")
+                link = item.find("link")
+                desc = item.find("description")
+                items.append({
+                    "title": (title.text or "")[:120] if title is not None else "",
+                    "url": (link.text or "") if link is not None else "",
+                    "summary": (desc.text or "")[:200] if desc is not None else "",
+                })
+            _seestar_cache["news"] = {"ts": now, "data": items[:8]}
+            return {"news": items[:8]}
         except Exception:
             return {"news": _seestar_cache["news"]["data"] or []}
 
     @app.get("/api/seestar/trending")
     async def seestar_trending(refresh: str = "0"):
-        """GitHub 热门 — 缓存10分钟，秒加载。refresh=1 强制刷新。"""
+        """GitHub 热门 — 缓存30分钟。"""
         nonlocal _seestar_cache
         now = time.time()
-        if refresh != "1" and _seestar_cache["trending"]["data"] and (now - _seestar_cache["trending"]["ts"]) < 600:
+        if refresh != "1" and _seestar_cache["trending"]["data"] and (now - _seestar_cache["trending"]["ts"]) < 1800:
             return {"repos": _seestar_cache["trending"]["data"]}
 
+        repos = []
         try:
-            import requests as req
-            r = req.get(
-                "https://api.github.com/search/repositories?q=ai+agent+topic:ai&sort=stars&order=desc&per_page=6",
-                headers={"Accept": "application/vnd.github.v3+json"}, timeout=10,
-            )
-            repos = [{"name": i["full_name"], "desc": (i.get("description") or "")[:120],
-                      "stars": str(i.get("stargazers_count", 0)), "url": i["html_url"]}
-                     for i in r.json().get("items", [])[:6]]
+            import requests as _r
+            # 多关键词搜索
+            for q in ["ai-agent", "langgraph", "mcp-server"]:
+                if len(repos) >= 6: break
+                r = _r.get(
+                    f"https://api.github.com/search/repositories?q={q}+stars:>100&sort=stars&order=desc&per_page=3",
+                    headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "TripleA"},
+                    timeout=10,
+                )
+                for i in r.json().get("items", []):
+                    repos.append({
+                        "name": i["full_name"],
+                        "desc": (i.get("description") or "")[:120],
+                        "stars": f"⭐ {i.get('stargazers_count', 0):,}",
+                        "url": i["html_url"],
+                        "lang": i.get("language") or "",
+                    })
+            repos = repos[:8]
             _seestar_cache["trending"] = {"ts": now, "data": repos}
-            return {"repos": repos}
         except Exception:
-            return {"repos": _seestar_cache["trending"]["data"] or []}
+            repos = _seestar_cache["trending"]["data"] or []
+        return {"repos": repos}
 
     # ─── MCP 协议端点：GPU Monitor Server ───
 
@@ -1252,22 +1260,22 @@ def create_app() -> FastAPI:
         api = _get_api() if _has_token() else None
         _daemon = DaemonV2(registry=_get_registry(), db=get_db(), api=api)
         asyncio.create_task(_daemon.run())
-        # 后台预热 Seestar 缓存（不阻塞启动）
-        import threading
+        # 后台预热 Seestar 缓存
+        import threading, xml.etree.ElementTree as ET
         def _warm():
             try:
-                # 预热 trending（快）
+                # RSS
                 import requests as _r
-                resp = _r.get(
-                    "https://api.github.com/search/repositories?q=ai+agent+topic:ai&sort=stars&order=desc&per_page=6",
-                    headers={"Accept": "application/vnd.github.v3+json"}, timeout=10,
-                )
-                repos = [{"name": i["full_name"], "desc": (i.get("description") or "")[:120],
-                          "stars": str(i.get("stargazers_count", 0)), "url": i["html_url"]}
-                         for i in resp.json().get("items", [])[:6]]
-                _seestar_cache["trending"] = {"ts": time.time(), "data": repos}
-            except Exception:
-                pass
+                resp = _r.get("https://aihot.virxact.com/feed.xml", timeout=10)
+                root = ET.fromstring(resp.content)
+                items = []
+                for item in root.iter("item"):
+                    t = item.find("title"); d = item.find("description"); l = item.find("link")
+                    items.append({"title": (t.text or "")[:120] if t is not None else "",
+                                  "url": (l.text or "") if l is not None else "",
+                                  "summary": (d.text or "")[:200] if d is not None else ""})
+                _seestar_cache["news"] = {"ts": time.time(), "data": items[:8]}
+            except Exception: pass
         threading.Thread(target=_warm, daemon=True).start()
 
     @app.on_event("shutdown")

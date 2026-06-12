@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-// ── State ──
 const paperUrl = ref('')
 const paperLoading = ref(false)
 const paperResult = ref<null | { title: string; problem: string; insight: string; concepts: string[]; review: string }>(null)
-const news = ref<{ title: string; summary: string; source: string }[]>([])
-const trending = ref<{ name: string; desc: string; stars: string; url: string }[]>([])
+const news = ref<{ title: string; url: string; summary: string }[]>([])
+const trending = ref<{ name: string; desc: string; stars: string; url: string; lang: string }[]>([])
 const newsLoading = ref(false)
-const activeTab = ref<'papers' | 'trending'>('papers')
 
-// ── Paper Analysis ──
 async function analyzePaper() {
   if (!paperUrl.value.trim() || paperLoading.value) return
   paperLoading.value = true
@@ -23,14 +20,10 @@ async function analyzePaper() {
     })
     const data = await res.json()
     if (data.result) paperResult.value = data.result
-    else alert('解析失败: ' + (data.error || '未知错误'))
-  } catch (e) {
-    alert('请求失败')
-  }
+  } catch (_) { /* ignore */ }
   paperLoading.value = false
 }
 
-// ── Load News ──
 async function loadNews(force = false) {
   newsLoading.value = true
   try {
@@ -64,85 +57,93 @@ onMounted(() => { loadNews(); loadTrending() })
       </button>
     </div>
 
-    <!-- ===== AI 新闻横排卡片 ===== -->
+    <!-- ===== AI 新闻 RSS ===== -->
     <div style="margin-bottom:20px;">
-      <div style="font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">AI 速览</div>
-      <div v-if="newsLoading" style="color:var(--text-dim);font-size:12px;padding:8px;">加载中...</div>
-      <div v-else-if="news.length === 0" style="color:var(--text-dim);font-size:12px;padding:8px;">暂无新闻</div>
-      <div v-else style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">
-        <div v-for="n in news" :key="n.title" class="glass-card" style="padding:14px;">
-          <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;">{{ n.source }}</div>
-          <div style="font-weight:600;font-size:13px;margin-bottom:4px;line-height:1.3;">{{ n.title }}</div>
-          <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">{{ n.summary }}</div>
-        </div>
+      <div style="font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">
+        AI 新闻 · aihot.virxact.com
+      </div>
+      <div v-if="news.length === 0 && newsLoading" style="color:var(--text-dim);font-size:12px;padding:8px;">加载中...</div>
+      <div v-else style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+        <a v-for="n in news" :key="n.title" :href="n.url" target="_blank"
+          class="glass-card" style="padding:12px 14px;text-decoration:none;display:block;transition:all 0.15s;"
+          :style="{ cursor: n.url ? 'pointer' : 'default' }">
+          <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:4px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
+            {{ n.title }}
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
+            {{ n.summary }}
+          </div>
+        </a>
       </div>
     </div>
 
-    <!-- ===== 双栏：论文 + GitHub ===== -->
+    <!-- ===== 双栏 ===== -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
 
       <!-- 论文解析 -->
       <div>
         <div style="font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">论文解析</div>
-        <div class="glass-card" style="padding:14px;">
-          <div style="display:flex;gap:6px;margin-bottom:12px;">
-            <input v-model="paperUrl" @keyup.enter="analyzePaper" placeholder="粘贴 arXiv URL 或论文链接..."
+        <div class="glass-card" style="padding:16px;">
+          <div style="display:flex;gap:6px;margin-bottom:14px;">
+            <input v-model="paperUrl" @keyup.enter="analyzePaper" placeholder="粘贴 arXiv URL..."
               style="flex:1;font-size:12px;" />
             <button class="btn btn-primary" @click="analyzePaper" :disabled="paperLoading" style="font-size:12px;">
               {{ paperLoading ? '解析中' : '解析' }}
             </button>
           </div>
 
-          <!-- Loading -->
-          <div v-if="paperLoading" style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px;">
-            <div class="pulse-dot"></div>
-            正在调用 LLM 分析论文...
+          <!-- 太阳呼吸动画 — 解析中 -->
+          <div v-if="paperLoading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;">
+            <div class="sun-breathe">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="var(--text)" stroke-width="1.2">
+                <circle cx="24" cy="24" r="5" stroke-width="2"/>
+                <path d="M24 2v5m0 34v5M8.5 8.5l3.5 3.5m24 24l3.5 3.5M2 24h5m34 0h5M8.5 39.5l3.5-3.5m24-24l3.5-3.5"/>
+              </svg>
+            </div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-top:12px;">Triple A 正在为您解析论文</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">读取摘要 · 提取洞见 · 审稿视角</div>
           </div>
 
-          <!-- Result -->
+          <!-- 结果 -->
           <div v-else-if="paperResult" style="display:flex;flex-direction:column;gap:10px;">
-            <div style="font-weight:700;font-size:14px;">{{ paperResult.title }}</div>
-
-            <div>
-              <div style="font-size:10px;font-weight:600;color:var(--text-dim);margin-bottom:2px;">核心问题</div>
-              <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">{{ paperResult.problem }}</div>
+            <div style="font-weight:700;font-size:14px;line-height:1.4;">{{ paperResult.title }}</div>
+            <div style="font-size:10px;font-weight:600;color:var(--text-dim);">核心问题</div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">{{ paperResult.problem }}</div>
+            <div style="font-size:10px;font-weight:600;color:var(--text-dim);">关键概念</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">
+              <span v-for="c in paperResult.concepts" :key="c" style="font-size:11px;padding:2px 8px;background:var(--bg-hover);border-radius:4px;color:var(--text-secondary);">{{ c }}</span>
             </div>
-
-            <div>
-              <div style="font-size:10px;font-weight:600;color:var(--text-dim);margin-bottom:2px;">关键概念</div>
-              <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                <span v-for="c in paperResult.concepts" :key="c" style="font-size:11px;padding:2px 8px;background:var(--bg-hover);border-radius:4px;color:var(--text-secondary);">{{ c }}</span>
-              </div>
-            </div>
-
-            <div>
-              <div style="font-size:10px;font-weight:600;color:var(--text-dim);margin-bottom:2px;">核心洞见</div>
-              <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">{{ paperResult.insight }}</div>
-            </div>
-
-            <div>
-              <div style="font-size:10px;font-weight:600;color:var(--text-dim);margin-bottom:2px;">审稿视角</div>
-              <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">{{ paperResult.review }}</div>
-            </div>
+            <div style="font-size:10px;font-weight:600;color:var(--text-dim);">核心洞见</div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">{{ paperResult.insight }}</div>
+            <div style="font-size:10px;font-weight:600;color:var(--text-dim);">审稿视角</div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">{{ paperResult.review }}</div>
           </div>
 
-          <!-- Empty -->
+          <!-- 空 -->
           <div v-else style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px;">
-            输入论文链接，AI 自动拆解核心问题、关键概念、洞见和审稿视角
+            输入 arXiv 论文链接，AI 自动拆解核心问题、洞见和审稿视角
           </div>
         </div>
       </div>
 
-      <!-- GitHub 热门 -->
+      <!-- GitHub -->
       <div>
         <div style="font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">GitHub 热门</div>
         <div v-if="trending.length === 0" style="color:var(--text-dim);font-size:12px;padding:8px;">加载中...</div>
-        <div v-else style="display:flex;flex-direction:column;gap:8px;">
-          <div v-for="r in trending" :key="r.name" class="glass-card" style="padding:12px 14px;">
-            <a :href="r.url" target="_blank" style="font-weight:600;font-size:13px;color:var(--text);text-decoration:none;">{{ r.name }}</a>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;line-height:1.4;">{{ r.desc }}</div>
-            <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">⭐ {{ r.stars }}</div>
-          </div>
+        <div v-else style="display:flex;flex-direction:column;gap:6px;">
+          <a v-for="r in trending" :key="r.name" :href="r.url" target="_blank"
+            class="glass-card" style="padding:10px 14px;text-decoration:none;display:block;transition:all 0.15s;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;color:var(--text);">{{ r.name }}</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:2px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ r.desc }}</div>
+              </div>
+              <div style="font-size:10px;color:var(--text-dim);white-space:nowrap;text-align:right;">
+                <div>{{ r.stars }}</div>
+                <div v-if="r.lang" style="margin-top:2px;">{{ r.lang }}</div>
+              </div>
+            </div>
+          </a>
         </div>
       </div>
 
@@ -151,12 +152,10 @@ onMounted(() => { loadNews(); loadTrending() })
 </template>
 
 <style scoped>
-.pulse-dot {
-  display: inline-block; width: 8px; height: 8px; background: var(--text); border-radius: 50%;
-  margin-right: 6px; animation: pulse 1.4s ease-in-out infinite;
+.sun-breathe { animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.45; }
+  50% { transform: scale(1.35); opacity: 1; }
 }
-@keyframes pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
+.glass-card:hover { border-color: var(--text-dim); transform: translateY(-1px); }
 </style>
